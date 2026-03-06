@@ -4,13 +4,22 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 from PIL import Image
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import io
 
-# Load model
+# ---------------------------
+# Load Model
+# ---------------------------
+
 model = tf.keras.models.load_model("skin_cancer_model.h5")
 
 classes = ['akiec','bcc','bkl','df','mel','nv','vasc']
 
-# Page config
+# ---------------------------
+# Page Setup
+# ---------------------------
+
 st.set_page_config(
     page_title="AI Skin Cancer Detection",
     layout="wide"
@@ -18,55 +27,48 @@ st.set_page_config(
 
 st.title("🧬 AI Skin Cancer Detection Dashboard")
 
-st.write("Upload a dermatoscopic skin image to analyze possible skin cancer.")
+st.write("Upload a skin lesion image to analyze possible skin cancer.")
 
-# -----------------------
-# GradCAM Function
-# -----------------------
+# ---------------------------
+# PDF Report Generator
+# ---------------------------
 
-def get_gradcam(model, img_array, last_conv_layer_name="Conv_1"):
+def generate_report(result, confidence, risk):
 
-    grad_model = tf.keras.models.Model(
-        inputs=model.inputs,
-        outputs=[model.get_layer(last_conv_layer_name).output, model.output]
-    )
+    buffer = io.BytesIO()
 
-    with tf.GradientTape() as tape:
+    c = canvas.Canvas(buffer, pagesize=letter)
 
-        conv_outputs, predictions = grad_model(img_array)
+    c.setFont("Helvetica-Bold",16)
+    c.drawString(150,750,"Skin Cancer AI Diagnosis Report")
 
-        class_idx = tf.argmax(predictions[0]).numpy()
+    c.setFont("Helvetica",12)
 
-        loss = predictions[:, class_idx]
+    c.drawString(100,700,f"Predicted Disease: {result}")
+    c.drawString(100,670,f"Confidence Score: {confidence*100:.2f}%")
+    c.drawString(100,640,f"Cancer Risk Level: {risk}")
 
-    grads = tape.gradient(loss, conv_outputs)
+    c.drawString(100,600,"Note:")
+    c.drawString(100,580,"This AI system provides an automated analysis.")
+    c.drawString(100,560,"Consult a dermatologist for professional diagnosis.")
 
-    pooled_grads = tf.reduce_mean(grads, axis=(0,1,2))
+    c.save()
 
-    conv_outputs = conv_outputs[0]
+    buffer.seek(0)
 
-    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+    return buffer
 
-    heatmap = tf.squeeze(heatmap)
-
-    heatmap = np.maximum(heatmap,0)
-
-    heatmap = heatmap / np.max(heatmap)
-
-    return heatmap.numpy()
-
-
-# -----------------------
+# ---------------------------
 # Upload Image
-# -----------------------
+# ---------------------------
 
 uploaded_file = st.file_uploader("Upload Skin Image")
 
 if uploaded_file:
 
-    image = Image.open(uploaded_file)
-
     col1, col2 = st.columns(2)
+
+    image = Image.open(uploaded_file)
 
     col1.image(image, caption="Uploaded Image", use_column_width=True)
 
@@ -78,6 +80,10 @@ if uploaded_file:
 
     img_array = np.expand_dims(img_norm,axis=0)
 
+    # ---------------------------
+    # Model Prediction
+    # ---------------------------
+
     prediction = model.predict(img_array)
 
     class_id = np.argmax(prediction)
@@ -86,9 +92,9 @@ if uploaded_file:
 
     result = classes[class_id]
 
-    # -----------------------
+    # ---------------------------
     # Prediction Card
-    # -----------------------
+    # ---------------------------
 
     col2.subheader("Prediction Result")
 
@@ -96,15 +102,32 @@ if uploaded_file:
 
     col2.metric("Confidence", f"{confidence*100:.2f}%")
 
+    # ---------------------------
+    # Risk Indicator
+    # ---------------------------
+
     if result in ["mel","bcc","akiec"]:
-        col2.error("⚠ Possible Skin Cancer Detected")
+
+        if confidence > 0.80:
+            risk = "HIGH"
+            col2.error("🔴 Cancer Risk Level: HIGH")
+
+        elif confidence > 0.50:
+            risk = "MEDIUM"
+            col2.warning("🟠 Cancer Risk Level: MEDIUM")
+
+        else:
+            risk = "LOW"
+            col2.info("🟡 Cancer Risk Level: LOW")
+
     else:
-        col2.success("✅ Benign Skin Lesion")
 
+        risk = "LOW"
+        col2.success("🟢 Cancer Risk Level: LOW")
 
-    # -----------------------
+    # ---------------------------
     # Probability Chart
-    # -----------------------
+    # ---------------------------
 
     st.subheader("Prediction Probabilities")
 
@@ -114,25 +137,36 @@ if uploaded_file:
 
     ax.set_ylabel("Probability")
 
+    ax.set_xticks(range(len(classes)))
     ax.set_xticklabels(classes, rotation=45)
 
     st.pyplot(fig)
 
+    # ---------------------------
+    # Heatmap Visualization
+    # ---------------------------
 
-    # -----------------------
-    # GradCAM Heatmap
-    # -----------------------
+    st.subheader("Heatmap Visualization")
 
-    heatmap = get_gradcam(model,img_array)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    heatmap = cv2.resize(heatmap,(224,224))
+    heatmap = cv2.applyColorMap(gray, cv2.COLORMAP_JET)
 
-    heatmap = np.uint8(255*heatmap)
+    overlay = cv2.addWeighted(img,0.6,heatmap,0.4,0)
 
-    heatmap = cv2.applyColorMap(heatmap,cv2.COLORMAP_JET)
+    st.image(overlay, caption="Skin Lesion Heatmap", use_column_width=True)
 
-    superimposed = heatmap * 0.4 + img
+    # ---------------------------
+    # Download PDF Report
+    # ---------------------------
 
-    st.subheader("GradCAM Visualization")
+    st.subheader("Download Medical Report")
 
-    st.image(superimposed.astype("uint8"), caption="Highlighted Lesion Region")
+    pdf = generate_report(result,confidence,risk)
+
+    st.download_button(
+        label="Download Diagnosis Report",
+        data=pdf,
+        file_name="skin_cancer_report.pdf",
+        mime="application/pdf"
+    )
