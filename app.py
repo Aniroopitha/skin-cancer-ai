@@ -35,13 +35,13 @@ def get_gradcam(model, img_array, last_conv_layer_name="Conv_1"):
 
         conv_outputs, predictions = grad_model(img_array)
 
-        class_idx = int(tf.argmax(predictions[0]))
+        class_idx = tf.argmax(predictions[0]).numpy()
 
-        loss = predictions[0][class_idx]
+        loss = predictions[:, class_idx]
 
     grads = tape.gradient(loss, conv_outputs)
 
-    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+    pooled_grads = tf.reduce_mean(grads, axis=(0,1,2))
 
     conv_outputs = conv_outputs[0]
 
@@ -49,7 +49,7 @@ def get_gradcam(model, img_array, last_conv_layer_name="Conv_1"):
 
     heatmap = tf.squeeze(heatmap)
 
-    heatmap = np.maximum(heatmap, 0)
+    heatmap = np.maximum(heatmap,0)
 
     heatmap = heatmap / np.max(heatmap)
 
