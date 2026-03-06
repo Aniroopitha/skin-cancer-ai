@@ -35,7 +35,7 @@ def get_gradcam(model, img_array, last_conv_layer_name="Conv_1"):
 
         conv_outputs, predictions = grad_model(img_array)
 
-        class_idx = tf.argmax(predictions[0])
+        class_idx = tf.argmax(predictions[0]).numpy()
 
         loss = predictions[:, class_idx]
 
@@ -49,7 +49,9 @@ def get_gradcam(model, img_array, last_conv_layer_name="Conv_1"):
 
     heatmap = tf.squeeze(heatmap)
 
-    heatmap = np.maximum(heatmap,0) / np.max(heatmap)
+    heatmap = np.maximum(heatmap,0)
+
+    heatmap = heatmap / np.max(heatmap)
 
     return heatmap
 
