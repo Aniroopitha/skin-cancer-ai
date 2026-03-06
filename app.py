@@ -27,21 +27,21 @@ st.write("Upload a dermatoscopic skin image to analyze possible skin cancer.")
 def get_gradcam(model, img_array, last_conv_layer_name="Conv_1"):
 
     grad_model = tf.keras.models.Model(
-        [model.inputs],
-        [model.get_layer(last_conv_layer_name).output, model.output]
+        inputs=model.inputs,
+        outputs=[model.get_layer(last_conv_layer_name).output, model.output]
     )
 
     with tf.GradientTape() as tape:
 
         conv_outputs, predictions = grad_model(img_array)
 
-        class_idx = tf.argmax(predictions[0]).numpy()
+        class_idx = int(tf.argmax(predictions[0]))
 
-        loss = predictions[:, class_idx]
+        loss = predictions[0][class_idx]
 
     grads = tape.gradient(loss, conv_outputs)
 
-    pooled_grads = tf.reduce_mean(grads, axis=(0,1,2))
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
 
     conv_outputs = conv_outputs[0]
 
@@ -49,11 +49,11 @@ def get_gradcam(model, img_array, last_conv_layer_name="Conv_1"):
 
     heatmap = tf.squeeze(heatmap)
 
-    heatmap = np.maximum(heatmap,0)
+    heatmap = np.maximum(heatmap, 0)
 
     heatmap = heatmap / np.max(heatmap)
 
-    return heatmap
+    return heatmap.numpy()
 
 
 # -----------------------
